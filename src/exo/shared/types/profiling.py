@@ -50,6 +50,7 @@ class SystemPerformanceProfile(CamelCaseModel):
 class NetworkInterfaceInfo(CamelCaseModel):
     name: str
     ip_address: str
+    interface_type: str = "Other"
 
 
 class NodePerformanceProfile(CamelCaseModel):

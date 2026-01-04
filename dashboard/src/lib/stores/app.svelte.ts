@@ -31,8 +31,10 @@ export interface NodeInfo {
 	network_interfaces?: Array<{
 		name?: string;
 		addresses?: string[];
+		interface_type?: string;
 	}>;
 	ip_to_interface?: Record<string, string>;
+	ip_to_interface_type?: Record<string, string>;
 	macmon_info?: {
 		memory?: {
 			ram_usage: number;
@@ -75,6 +77,7 @@ interface RawNodeProfile {
 	networkInterfaces?: Array<{
 		name?: string;
 		ipAddress?: string;
+		interfaceType?: string;
 		addresses?: Array<{ address?: string } | string>;
 		ipv4?: string;
 		ipv6?: string;
@@ -227,14 +230,17 @@ function transformTopology(raw: RawTopology, profiles?: RawNodeProfiles): Topolo
 
 			return {
 				name: iface.name,
-				addresses: Array.from(new Set(addresses))
+				addresses: Array.from(new Set(addresses)),
+				interface_type: iface.interfaceType
 			};
 		});
 
 		const ipToInterface: Record<string, string> = {};
+		const ipToInterfaceType: Record<string, string> = {};
 		for (const iface of networkInterfaces) {
 			for (const addr of iface.addresses || []) {
 				ipToInterface[addr] = iface.name ?? '';
+				ipToInterfaceType[addr] = iface.interface_type ?? 'Other';
 			}
 		}
 
@@ -246,6 +252,7 @@ function transformTopology(raw: RawTopology, profiles?: RawNodeProfiles): Topolo
 			},
 			network_interfaces: networkInterfaces,
 			ip_to_interface: ipToInterface,
+			ip_to_interface_type: ipToInterfaceType,
 			macmon_info: {
 				memory: {
 					ram_usage: ramUsage,

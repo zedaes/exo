@@ -22,41 +22,50 @@ function getNodeLabel(nodeId: string): string {
 	return node?.friendly_name || nodeId.slice(0, 8);
 }
 
-function getInterfaceLabel(nodeId: string, ip?: string): { label: string; missing: boolean } {
-	if (!ip) return { label: '?', missing: true };
-	
+function getInterfaceLabel(nodeId: string, ip?: string): { label: string; interfaceType: string; missing: boolean } {
+	if (!ip) return { label: '?', interfaceType: 'Other', missing: true };
+
 	// Strip port if present (e.g., "192.168.1.1:8080" -> "192.168.1.1")
 	const cleanIp = ip.includes(':') && !ip.includes('[') ? ip.split(':')[0] : ip;
-	
+
 	// Helper to check a node's interfaces
-	function checkNode(node: typeof data.nodes[string]): string | null {
+	function checkNode(node: typeof data.nodes[string]): { name: string; type: string } | null {
 		if (!node) return null;
-		
+
 		const matchFromInterfaces = node.network_interfaces?.find((iface) =>
 			(iface.addresses || []).some((addr) => addr === cleanIp || addr === ip)
 		);
 		if (matchFromInterfaces?.name) {
-			return matchFromInterfaces.name;
+			return {
+				name: matchFromInterfaces.name,
+				type: matchFromInterfaces.interface_type || 'Other'
+			};
 		}
 
-		const mapped = node.ip_to_interface?.[cleanIp] || node.ip_to_interface?.[ip];
-		if (mapped && mapped.trim().length > 0) {
-			return mapped;
+		const mappedName = node.ip_to_interface?.[cleanIp] || node.ip_to_interface?.[ip];
+		const mappedType = node.ip_to_interface_type?.[cleanIp] || node.ip_to_interface_type?.[ip];
+		if (mappedName && mappedName.trim().length > 0) {
+			return { name: mappedName, type: mappedType || 'Other' };
 		}
 		return null;
 	}
-	
+
 	// Try specified node first
 	const result = checkNode(data?.nodes?.[nodeId]);
-	if (result) return { label: result, missing: false };
-	
+	if (result) return { label: result.name, interfaceType: result.type, missing: false };
+
 	// Fallback: search all nodes for this IP
 	for (const [, otherNode] of Object.entries(data?.nodes || {})) {
 		const otherResult = checkNode(otherNode);
-		if (otherResult) return { label: otherResult, missing: false };
+		if (otherResult) return { label: otherResult.name, interfaceType: otherResult.type, missing: false };
 	}
 
-	return { label: '?', missing: true };
+	// Check if this looks like a Thunderbolt IP (link-local)
+	if (cleanIp.startsWith('169.254')) {
+		return { label: '?', interfaceType: 'Thunderbolt', missing: true };
+	}
+
+	return { label: '?', interfaceType: 'Other', missing: true };
 }
 
 function wrapLine(text: string, maxLen: number): string[] {
@@ -255,17 +264,17 @@ function wrapLine(text: string, maxLen: number): string[] {
 		const arrowsGroup = svg.append('g').attr('class', 'arrows-group');
 		const debugLabelsGroup = svg.append('g').attr('class', 'debug-edge-labels');
 
-		const pairMap = new Map<string, { a: string; b: string; aToB: boolean; bToA: boolean; connections: Array<{ from: string; to: string; ip: string; ifaceLabel: string; missingIface: boolean }> }>();
+		const pairMap = new Map<string, { a: string; b: string; aToB: boolean; bToA: boolean; connections: Array<{ from: string; to: string; ip: string; ifaceLabel: string; interfaceType: string; missingIface: boolean }> }>();
 		let debugEdgeLabels: Array<{ connections: typeof pairMap extends Map<string, infer V> ? V['connections'] : never; isLeft: boolean; isTop: boolean; mx: number; my: number }> | null = null;
 		edges.forEach(edge => {
 			if (!edge.source || !edge.target || edge.source === edge.target) return;
 			if (!positionById[edge.source] || !positionById[edge.target]) return;
-			
+
 			const a = edge.source < edge.target ? edge.source : edge.target;
 			const b = edge.source < edge.target ? edge.target : edge.source;
 			const key = `${a}|${b}`;
 			const entry = pairMap.get(key) || { a, b, aToB: false, bToA: false, connections: [] };
-			
+
 			if (edge.source === a) entry.aToB = true;
 			else entry.bToA = true;
 
@@ -276,6 +285,7 @@ function wrapLine(text: string, maxLen: number): string[] {
 				to: edge.target,
 				ip,
 				ifaceLabel: ifaceInfo.label,
+				interfaceType: ifaceInfo.interfaceType,
 				missingIface: ifaceInfo.missing
 			});
 			pairMap.set(key, entry);
@@ -409,7 +419,8 @@ function wrapLine(text: string, maxLen: number): string[] {
 				edges.forEach(edge => {
 					edge.connections.forEach(conn => {
 						const arrow = getArrow(conn.from, conn.to);
-						const label = `${arrow} ${conn.ip} ${conn.ifaceLabel}`;
+						// Show interface type (e.g., "Thunderbolt", "WiFi") prominently
+						const label = `${arrow} ${conn.interfaceType} (${conn.ifaceLabel})`;
 						debugLabelsGroup.append('text')
 							.attr('x', baseX)
 							.attr('y', currentY)
