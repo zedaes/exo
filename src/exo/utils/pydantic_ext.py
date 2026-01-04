@@ -18,6 +18,7 @@ class CamelCaseModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         validate_by_name=True,
+        serialize_by_alias=True,
         extra="forbid",
         # I want to reenable this ASAP, but it's causing an issue with TaskStatus
         strict=True,
